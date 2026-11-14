@@ -29,7 +29,8 @@ Run dotnet @("build", "$root\DSC-Sync.sln", "-c", $Configuration)
 
 if (-not $SkipTests) {
     Step "Run tests (simulated token: hot-swap, multiplexing, multi-user routing, PKCS#11 & PDF signing)"
-    Run dotnet @("test", "$root\tests\DSC-Sync.Tests\DSC-Sync.Tests.csproj", "-c", $Configuration, "--no-build")
+    Run dotnet @("test", "$root\tests\DSC-Sync.Tests\DSC-Sync.Tests.csproj", "-c", $Configuration, "--no-build",
+        "--blame-hang-timeout", "3m", "--logger", "console;verbosity=normal")
 }
 
 Step "Publish DSC-Sync.exe (self-contained single file, win-x64)"
