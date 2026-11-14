@@ -1,0 +1,19 @@
+DSC-Sync — LOCAL PC (where your USB DSC token is plugged in)
+=============================================================
+Supported: Windows 10 / Windows 11 (64-bit). Nothing else to install — DSC-Sync is self-contained.
+
+1. Make sure your token's own driver is installed (the CD/installer that came with the
+   token: ePass2003, ProxKey/Watchdata, TrustKey, SafeSign, mToken, ...). Install emSigner
+   on this PC as usual if you sign on GST / MCA / Income Tax portals.
+2. Double-click  install-local.cmd   (no administrator rights needed).
+3. Plug in your DSC token. The DSC-Sync window shows the certificate holder, issuer and expiry.
+4. Connect to the company server with Remote Desktop (mstsc). That's it — the DSC-Sync on the
+   server links automatically through the RDP connection itself (no ports, no firewall, no VPN).
+
+Swapping tokens: just pull one token out and insert another. The server sees the change in
+under a second; the next GST/MCA/PDF signing uses the new certificate.
+
+Not using Windows Remote Desktop (AnyDesk, Citrix, ...)?  Settings ▸ Transport ▸ "TLS tunnel only",
+enter the server address, the port shown on the server and the same pairing PIN on both PCs.
+
+Problems?  Dashboard ▸ "Diagnose & Auto-Fix".  For support: "Export support bundle" (zip on Desktop).

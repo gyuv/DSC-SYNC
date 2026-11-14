@@ -1,0 +1,31 @@
+DSC-Sync — REMOTE DESKTOP / CLOUD SERVER (Windows Server 2019/2022, multi-user RDS)
+=====================================================================================
+Nothing else to install — DSC-Sync is self-contained.
+
+ADMINISTRATOR (once per server):
+  Right-click  install-server-all-users.cmd  ▸ Run as administrator.
+  - Installs to C:\Program Files\DSC-Sync and starts it for EVERY user at sign-in.
+  - Creates the shared usage-report folder (C:\ProgramData\DSC-Sync\audit).
+  - Disables any emSigner service on the server (it cannot see USB tokens there).
+
+  Without admin rights a single user can run  install-remote.cmd  instead.
+
+EACH USER:
+  Just sign in with Remote Desktop from a PC that runs DSC-Sync (Local). Each user's browser
+  and Acrobat automatically use THEIR OWN token — 15+ users can sign at the same time.
+
+GST / MCA V3 / Income Tax / TRACES (emSigner):
+  Open the portal in Chrome/Edge on the server and sign as usual. The emSigner on the user's
+  Local PC does the signing; DSC-Sync routes 127.0.0.1 ports 1585, 8080, 2015, 2095, 2568,
+  2868, 4587 and 1645 to the right user and trusts emSigner's 127.0.0.1 certificate.
+  (The emSigner PIN prompt appears on the user's Local PC screen.)
+
+Adobe Acrobat / Reader (64-bit) PDF signing:
+  Edit ▸ Preferences ▸ Signatures ▸ Identities & Trusted Certificates ▸ More ▸ Digital IDs ▸
+  PKCS#11 Modules and Tokens ▸ Attach Module ▸ choose  DSC-Sync-P11-x64.dll  (one time).
+  Or use DSC-Sync's own "Quick PDF Signer" tab (drag & drop, choose position, enter PIN).
+
+Reports: the "Reports" tab lists who used which DSC, when, from which application, with
+  filters and CSV/Excel export. Records are kept in C:\ProgramData\DSC-Sync\audit.
+
+Problems?  Dashboard ▸ "Diagnose & Auto-Fix".  For support: "Export support bundle".

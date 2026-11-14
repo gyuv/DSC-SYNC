@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Native mstsc (Remote Desktop Connection) dynamic virtual channel plug-in for the Local PC.
+    Published with NativeAOT: a plain native DLL, no .NET runtime or COM registration required.
+    Registered per user by DSC-Sync: HKCU\Software\Microsoft\Terminal Server Client\Default\AddIns\DSCSync\Name = <dll path>
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>DscSync.RdpPlugin</RootNamespace>
+    <AssemblyName>DSC-Sync-RdpPlugin</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <IsAotCompatible>true</IsAotCompatible>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <OptimizationPreference>Size</OptimizationPreference>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DSC-Sync.Core\DSC-Sync.Core.csproj" />
+  </ItemGroup>
+</Project>

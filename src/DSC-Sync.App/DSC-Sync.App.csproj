@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- 10.0.17763 = Windows 10 1809 / Server 2019: gives built-in Windows.Data.Pdf for page previews. -->
+    <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>DscSync.App</RootNamespace>
+    <AssemblyName>DSC-Sync</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>DscSync.App.Program</StartupObject>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- UseWindowsForms adds global usings that clash with WPF types (Point, DragEventArgs…); tray code imports them explicitly. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <!-- The WPF SDK omits the System.IO global using; no file here imports System.Windows.Shapes, so Path is unambiguous. -->
+    <Using Include="System.IO" />
+    <PackageReference Include="System.Management" Version="8.0.0" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DSC-Sync.Core\DSC-Sync.Core.csproj" />
+    <ProjectReference Include="..\DSC-Sync.Tunnel\DSC-Sync.Tunnel.csproj" />
+    <ProjectReference Include="..\DSC-Sync.Pkcs11Bridge\DSC-Sync.Pkcs11Bridge.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>DscSync.Tunnel</RootNamespace>
+    <AssemblyName>DSC-Sync.Tunnel</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DSC-Sync.Core\DSC-Sync.Core.csproj" />
+  </ItemGroup>
+</Project>

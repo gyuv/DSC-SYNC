@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Virtual PKCS#11 provider loaded by Adobe Acrobat, browsers, Java/emSigner, etc. on the Remote VM.
+    Publish with NativeAOT to get an unmanaged DLL exporting C_GetFunctionList & friends:
+      dotnet publish -c Release -r win-x64  (and -r win-x86 for 32-bit hosts such as older Acrobat Reader)
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>DscSync.P11</RootNamespace>
+    <AssemblyName>DSC-Sync-P11</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <IsAotCompatible>true</IsAotCompatible>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <StripSymbols>true</StripSymbols>
+    <OptimizationPreference>Size</OptimizationPreference>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DSC-Sync.Core\DSC-Sync.Core.csproj" />
+  </ItemGroup>
+</Project>
