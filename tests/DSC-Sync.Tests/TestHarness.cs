@@ -23,7 +23,9 @@ public sealed class LinkedPair : IAsyncDisposable
     public required List<int> ProxyPorts { get; init; }
 
     public static async Task<LinkedPair> CreateAsync(MockToken? initialToken = null, List<int>? proxyPorts = null,
-        Func<int, int>? mapLocalPort = null, string? remotePin = null)
+        Func<int, int>? mapLocalPort = null, string? remotePin = null, int sessionId = 0,
+        DscSync.Tunnel.Proxy.IConnectionOwnerResolver? resolver = null, string? proxyPrefix = null, DscSync.Core.Audit.AuditLog? audit = null,
+        bool startPortBroker = true)
     {
         var backend = new MockTokenBackend();
         if (initialToken is not null) backend.Insert(initialToken);
@@ -41,6 +43,10 @@ public sealed class LinkedPair : IAsyncDisposable
             StopLocalEmSigner = false,
             SyncEmSignerCertificate = false,
             P11PipeName = pipe,
+            ProxyPipePrefix = proxyPrefix ?? pipe + "-proxy-",
+            SessionId = sessionId,
+            Resolver = resolver ?? new DscSync.Tunnel.Proxy.CurrentSessionResolver(),
+            Audit = audit,
         }, new NullRemotePlatform()) { RetryDelay = TimeSpan.FromMilliseconds(200) };
         await remote.StartAsync();
 

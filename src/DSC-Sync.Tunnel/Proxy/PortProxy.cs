@@ -25,11 +25,23 @@ public sealed class PortStatus
 /// </summary>
 public sealed class LoopbackPortProxy : IAsyncDisposable
 {
-    private readonly Func<MuxConnection?> _connection;
+    private readonly Func<int, IPEndPoint, CancellationToken, Task<Stream?>> _upstream;
     private readonly ConcurrentDictionary<int, Listener> _listeners = new();
     private readonly CancellationTokenSource _cts = new();
 
-    public LoopbackPortProxy(Func<MuxConnection?> connection) => _connection = connection;
+    /// <summary>Proxy that opens upstream streams through a callback (port, browser endpoint).</summary>
+    public LoopbackPortProxy(Func<int, IPEndPoint, CancellationToken, Task<Stream?>> upstream) => _upstream = upstream;
+
+    /// <summary>Single-user proxy forwarding straight into a tunnel connection.</summary>
+    public LoopbackPortProxy(Func<MuxConnection?> connection)
+        : this(async (port, _, ct) =>
+        {
+            var mux = connection();
+            if (mux is null || mux.IsClosed) return null;
+            return await mux.OpenStreamAsync(port, ct).ConfigureAwait(false);
+        })
+    {
+    }
 
     public event Action<string>? Log;
 
@@ -54,7 +66,7 @@ public sealed class LoopbackPortProxy : IAsyncDisposable
             try
             {
                 var socket = new TcpListener(IPAddress.Loopback, port);
-                socket.Server.ExclusiveAddressUse = OperatingSystem.IsWindows();
+                if (OperatingSystem.IsWindows()) socket.Server.ExclusiveAddressUse = true; // no port hijacking by other users
                 socket.Start();
                 var l = new Listener { Socket = socket, Status = status };
                 status.State = PortState.Listening;
@@ -98,20 +110,19 @@ public sealed class LoopbackPortProxy : IAsyncDisposable
         l.Clients[id] = client;
         try
         {
-            var mux = _connection();
-            if (mux is null || mux.IsClosed)
-            {
-                Log?.Invoke($"Port {l.Status.Port}: browser connected but Local PC is not linked; connection refused");
-                return;
-            }
-            MuxStream remote;
+            Stream? remote;
             try
             {
-                remote = await mux.OpenStreamAsync(l.Status.Port, _cts.Token).ConfigureAwait(false);
+                remote = await _upstream(l.Status.Port, (IPEndPoint)client.Client.RemoteEndPoint!, _cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 Log?.Invoke($"Port {l.Status.Port}: Local emSigner unreachable ({ex.Message})");
+                return;
+            }
+            if (remote is null)
+            {
+                Log?.Invoke($"Port {l.Status.Port}: browser connected but the Local PC is not linked; connection refused");
                 return;
             }
             await StreamPump.BridgeAsync(client.GetStream(), remote, _cts.Token).ConfigureAwait(false);
@@ -145,8 +156,11 @@ public sealed class LoopbackPortProxy : IAsyncDisposable
         await Task.CompletedTask;
     }
 
+    private int _disposedFlag;
+
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposedFlag, 1) != 0) return;
         _cts.Cancel();
         await StopAsync().ConfigureAwait(false);
         _cts.Dispose();

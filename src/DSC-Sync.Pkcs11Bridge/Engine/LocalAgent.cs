@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using DscSync.Core.Audit;
 using DscSync.Core.Protocol;
 using DscSync.Core.Security;
 using DscSync.Tunnel.Proxy;
@@ -148,11 +149,35 @@ public sealed class LocalAgent : SyncEngineBase
 
     public TokenManager Tokens => _tokens;
 
+    /// <summary>Optional audit trail on the Local PC (who on which server used this token).</summary>
+    public AuditLog? Audit { get; set; }
+
+    private void AuditUse(string op, ulong slot, string peer, string detail, bool ok)
+    {
+        if (Audit is null) return;
+        var token = _tokens.State.Tokens.FirstOrDefault(t => t.SlotId == slot);
+        var cert = token?.Certificates.FirstOrDefault();
+        Audit.Write(new AuditEntry
+        {
+            Operation = op,
+            TokenPc = Environment.MachineName,
+            CertificateHolder = cert?.SubjectCommonName ?? "",
+            TokenSerial = token?.SerialNumber ?? "",
+            Issuer = cert?.IssuerCommonName ?? "",
+            Application = "Remote: " + peer,
+            Detail = detail,
+            Success = ok,
+        });
+    }
+
+    private static string PeerOf(CancellationToken _) => CurrentPeer.Value ?? "remote";
+    private static readonly AsyncLocal<string?> CurrentPeer = new();
+
     public void Start() => StartConnectorLoops();
 
     protected override void ConfigureConnection(MuxConnection mux)
     {
-        mux.RpcHandler = HandleRpcAsync;
+        mux.RpcHandler = (m, b, ct) => { CurrentPeer.Value = mux.PeerName; return HandleRpcAsync(m, b, ct); };
         mux.StreamOpenHandler = _enablePortProxy ? _ports.OpenAsync : null;
     }
 
@@ -184,7 +209,9 @@ public sealed class LocalAgent : SyncEngineBase
             case RpcMethods.Login:
                 {
                     var req = RpcBody.Deserialize(body, ProtocolJson.Default.LoginRequest);
-                    await _tokens.LoginAsync(req.SlotId, req.Generation, req.Pin, ct).ConfigureAwait(false);
+                    try { await _tokens.LoginAsync(req.SlotId, req.Generation, req.Pin, ct).ConfigureAwait(false); }
+                    catch (RpcException ex) { AuditUse(AuditOperations.Login, req.SlotId, PeerOf(ct), ex.Message, false); throw; }
+                    AuditUse(AuditOperations.Login, req.SlotId, PeerOf(ct), "", true);
                     Write($"Token login OK (slot {req.SlotId:X})");
                     return null;
                 }
@@ -197,7 +224,10 @@ public sealed class LocalAgent : SyncEngineBase
             case RpcMethods.Sign:
                 {
                     var req = RpcBody.Deserialize(body, ProtocolJson.Default.SignRequest);
-                    var sig = await _tokens.SignAsync(req, ct).ConfigureAwait(false);
+                    byte[] sig;
+                    try { sig = await _tokens.SignAsync(req, ct).ConfigureAwait(false); }
+                    catch (RpcException ex) { AuditUse(AuditOperations.Sign, req.SlotId, PeerOf(ct), ex.Message, false); throw; }
+                    AuditUse(AuditOperations.Sign, req.SlotId, PeerOf(ct), DscSync.Core.Pkcs11.CKM.Name(req.Mechanism), true);
                     Write($"Signed {req.Data.Length} bytes with {DscSync.Core.Pkcs11.CKM.Name(req.Mechanism)}");
                     return ProtocolJson.Serialize(new SignResponse { Signature = sig }, ProtocolJson.Default.SignResponse);
                 }

@@ -419,3 +419,141 @@ public class BridgeTests
         File.Delete(path);
     }
 }
+
+public class MultiUserTests
+{
+    /// <summary>Resolver that maps the browser's ephemeral port to a simulated RDS session.</summary>
+    private sealed class MapResolver : DscSync.Tunnel.Proxy.IConnectionOwnerResolver
+    {
+        public readonly System.Collections.Concurrent.ConcurrentDictionary<int, int> Map = new();
+        public int? ResolveSession(IPEndPoint client, int serverPort)
+        {
+            for (int i = 0; i < 200; i++)
+            {
+                if (Map.TryGetValue(client.Port, out var s)) return s;
+                Thread.Sleep(5);
+            }
+            return null;
+        }
+    }
+
+    private static TcpListener StartEcho(string tag)
+    {
+        var l = new TcpListener(IPAddress.Loopback, 0);
+        l.Start();
+        _ = Task.Run(async () =>
+        {
+            while (true)
+            {
+                TcpClient c;
+                try { c = await l.AcceptTcpClientAsync(); } catch { return; }
+                _ = Task.Run(async () =>
+                {
+                    using var _c = c;
+                    var s = c.GetStream();
+                    var buf = new byte[1024];
+                    int n;
+                    try { while ((n = await s.ReadAsync(buf)) > 0) await s.WriteAsync(Encoding.UTF8.GetBytes(tag + ":" + Encoding.UTF8.GetString(buf, 0, n))); }
+                    catch (IOException) { }
+                });
+            }
+        });
+        return l;
+    }
+
+    [Fact]
+    public async Task SharedLoopbackPort_IsRoutedToEachUsersOwnLocalPc()
+    {
+        // Two users (RDS sessions 11 and 12) on the same Server 2019, each with their own Local PC + emSigner.
+        var echoA = StartEcho("PC-of-Anita");
+        var echoB = StartEcho("PC-of-Bala");
+        int portA = ((IPEndPoint)echoA.LocalEndpoint).Port, portB = ((IPEndPoint)echoB.LocalEndpoint).Port;
+        int shared = TestUtil.FreeTcpPort();
+        var resolver = new MapResolver();
+        string prefix = "dscsync-route-" + Guid.NewGuid().ToString("N")[..8] + "-";
+        var audit = new DscSync.Core.Audit.AuditLog(Directory.CreateTempSubdirectory("dscsync-audit").FullName);
+
+        using var tA = MockToken.Create("ANITA", "A-1");
+        using var tB = MockToken.Create("BALA", "B-1");
+        await using var userA = await LinkedPair.CreateAsync(tA, new List<int> { shared }, p => portA, sessionId: 11, resolver: resolver, proxyPrefix: prefix, audit: audit);
+        await using var userB = await LinkedPair.CreateAsync(tB, new List<int> { shared }, p => portB, sessionId: 12, resolver: resolver, proxyPrefix: prefix, audit: audit);
+        await userA.WaitLinkedAsync();
+        await userB.WaitLinkedAsync();
+
+        // Exactly one instance owns the shared port; the other stands by.
+        Assert.True(userA.Remote.Broker.OwnsAllPorts ^ userB.Remote.Broker.OwnsAllPorts, $"A={userA.Remote.Broker.OwnsAllPorts} B={userB.Remote.Broker.OwnsAllPorts}");
+
+        async Task<string> Browse(int session)
+        {
+            using var c = new TcpClient();
+            c.Client.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+            resolver.Map[((IPEndPoint)c.Client.LocalEndPoint!).Port] = session;
+            await c.ConnectAsync(IPAddress.Loopback, shared);
+            var s = c.GetStream();
+            await s.WriteAsync(Encoding.UTF8.GetBytes("sign"));
+            var buf = new byte[256];
+            int n = await s.ReadAsync(buf).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+            return Encoding.UTF8.GetString(buf, 0, n);
+        }
+
+        var results = await Task.WhenAll(Browse(11), Browse(12), Browse(11), Browse(12));
+        Assert.Equal(new[] { "PC-of-Anita:sign", "PC-of-Bala:sign", "PC-of-Anita:sign", "PC-of-Bala:sign" }, results);
+
+        // Failover: the owner logs off, the other user's instance takes the port over.
+        var owner = userA.Remote.Broker.OwnsAllPorts ? userA : userB;
+        var other = owner == userA ? userB : userA;
+        other.Remote.Broker.ElectionInterval = TimeSpan.FromMilliseconds(100);
+        await owner.Remote.Broker.DisposeAsync();
+        other.Remote.Broker.TryBind();
+        await TestUtil.WaitUntilAsync(() => other.Remote.Broker.OwnsAllPorts, TimeSpan.FromSeconds(5));
+        int otherSession = other == userA ? 11 : 12;
+        Assert.StartsWith(otherSession == 11 ? "PC-of-Anita" : "PC-of-Bala", await Browse(otherSession));
+
+        await TestUtil.WaitUntilAsync(() => audit.Query(DateTime.Today, DateTime.Today).Any(e => e.Operation == DscSync.Core.Audit.AuditOperations.PortalActivity), TimeSpan.FromSeconds(5));
+        var holders = audit.Query(DateTime.Today, DateTime.Today, textFilter: "Portal").Select(e => e.CertificateHolder).ToHashSet();
+        Assert.Contains("ANITA", holders);
+        Assert.Contains("BALA", holders);
+        echoA.Stop();
+        echoB.Stop();
+    }
+
+    [Fact]
+    public async Task Audit_RecordsWhoSignedWithWhichToken()
+    {
+        var audit = new DscSync.Core.Audit.AuditLog(Directory.CreateTempSubdirectory("dscsync-audit").FullName);
+        using var token = MockToken.Create("KAVYA RAMAN", "EP-AUD-1");
+        await using var pair = await LinkedPair.CreateAsync(token, audit: audit);
+        await pair.WaitLinkedAsync();
+        await TestUtil.WaitUntilAsync(() => pair.Remote.State.Tokens.Count == 1, TimeSpan.FromSeconds(10));
+        using var p11 = new VirtualP11Core(() => new PipeP11Channel(pair.P11Pipe), 8);
+        p11.Initialize();
+        p11.OpenSession(1, CKF.SERIAL_SESSION, out var s);
+        Assert.Equal(CKR.PIN_INCORRECT, p11.Login(s, CKU.USER, "bad"));
+        Assert.Equal(CKR.OK, p11.Login(s, CKU.USER, token.Pin));
+        p11.FindObjectsInit(s, new[] { new P11Attribute(CKA.CLASS, BitConverter.GetBytes(CKO.PRIVATE_KEY)) });
+        p11.FindObjects(s, 1, out var keys);
+        p11.FindObjectsFinal(s);
+        p11.SignInit(s, CKM.SHA256_RSA_PKCS, null, keys[0]);
+        Assert.Equal(CKR.OK, p11.Sign(s, new byte[] { 1, 2, 3 }, out _));
+
+        var entries = audit.Query(DateTime.Today, DateTime.Today);
+        var sign = Assert.Single(entries, e => e.Operation == DscSync.Core.Audit.AuditOperations.Sign);
+        Assert.Equal("KAVYA RAMAN", sign.CertificateHolder);
+        Assert.Equal("EP-AUD-1", sign.TokenSerial);
+        Assert.Equal("CKM_SHA256_RSA_PKCS", sign.Detail);
+        Assert.Equal(Environment.UserName, sign.User.Split('\\').Last());
+        Assert.Contains(entries, e => e.Operation == DscSync.Core.Audit.AuditOperations.Login && !e.Success);
+        Assert.Contains(entries, e => e.Operation == DscSync.Core.Audit.AuditOperations.Linked);
+        var csv = DscSync.Core.Audit.AuditLog.ToCsv(entries);
+        Assert.Contains("KAVYA RAMAN", csv);
+        Assert.StartsWith("Date,Time,User", csv);
+    }
+
+    [Fact]
+    public void AuditCsv_NeutralisesFormulaInjection()
+    {
+        var csv = DscSync.Core.Audit.AuditLog.ToCsv(new[] { new DscSync.Core.Audit.AuditEntry { CertificateHolder = "=HYPERLINK(\"x\")", Detail = "a,b" } });
+        Assert.Contains("\"'=HYPERLINK(\"\"x\"\")\"", csv);
+        Assert.Contains("\"a,b\"", csv);
+    }
+}

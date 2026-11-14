@@ -205,6 +205,7 @@ public sealed class HelloDto
     public int Version { get; set; }
     public string Role { get; set; } = "";
     public string Machine { get; set; } = "";
+    public string User { get; set; } = "";
     public byte[] Nonce { get; set; } = Array.Empty<byte>();
     public byte[] Salt { get; set; } = Array.Empty<byte>();
 }

@@ -8,6 +8,7 @@ public sealed class HandshakeResult
 {
     public required string PeerRole { get; init; }
     public required string PeerMachine { get; init; }
+    public string PeerUser { get; init; } = "";
 }
 
 public sealed class PairingFailedException : Exception
@@ -37,6 +38,7 @@ public static class PairingHandshake
             Version = DscConstants.ProtocolVersion,
             Role = role,
             Machine = Environment.MachineName,
+            User = SessionInfo.UserName,
             Nonce = myNonce,
             Salt = mySalt,
         };
@@ -63,7 +65,7 @@ public static class PairingHandshake
         if (!CryptographicOperations.FixedTimeEquals(expected, proof.Mac))
             throw new PairingFailedException("Pairing PIN mismatch or tunnel tampered (channel binding differs)");
 
-        return new HandshakeResult { PeerRole = peer.Role, PeerMachine = peer.Machine };
+        return new HandshakeResult { PeerRole = peer.Role, PeerMachine = peer.Machine, PeerUser = peer.User };
     }
 
     private static byte[] ComputeMac(byte[] key, string role, byte[] senderNonce, byte[] receiverNonce, byte[] binding)

@@ -34,6 +34,8 @@ public sealed class MuxConnection : IAsyncDisposable
 
     public string TransportKind { get; }
     public string PeerName { get; }
+    public string PeerMachine { get; init; } = "";
+    public string PeerUser { get; init; } = "";
     public RpcHandler? RpcHandler { get; set; }
     public StreamOpenHandler? StreamOpenHandler { get; set; }
     public TimeSpan KeepAliveInterval { get; set; } = TimeSpan.FromSeconds(10);

@@ -48,7 +48,11 @@ public static class SessionEstablisher
             await codec.DisposeAsync().ConfigureAwait(false);
             throw;
         }
-        var mux = new MuxConnection(codec, isHostSide: role == PairingHandshake.RoleRemote, connection.Kind, $"{result.PeerMachine} ({connection.Peer})");
+        var mux = new MuxConnection(codec, isHostSide: role == PairingHandshake.RoleRemote, connection.Kind, $"{(string.IsNullOrEmpty(result.PeerUser) ? "" : result.PeerUser + " @ ")}{result.PeerMachine} ({connection.Peer})")
+        {
+            PeerMachine = result.PeerMachine,
+            PeerUser = result.PeerUser,
+        };
         configure?.Invoke(mux);
         mux.Start();
         return mux;

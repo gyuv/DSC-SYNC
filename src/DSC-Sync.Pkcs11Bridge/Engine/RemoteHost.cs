@@ -1,4 +1,6 @@
+using System.IO.Pipes;
 using DscSync.Core;
+using DscSync.Core.Audit;
 using DscSync.Core.Pkcs11;
 using DscSync.Core.Protocol;
 using DscSync.Core.Security;
@@ -28,8 +30,14 @@ public sealed class RemoteHostOptions
     public bool EnablePortProxy { get; set; } = true;
     public bool StopLocalEmSigner { get; set; } = true;
     public bool SyncEmSignerCertificate { get; set; } = true;
-    public string P11PipeName { get; set; } = DscConstants.P11PipeName;
+    public string P11PipeName { get; set; } = SessionInfo.P11Pipe();
     public bool EnableP11Pipe { get; set; } = true;
+    /// <summary>Per-session pipe that receives routed browser connections from the machine-wide port broker.</summary>
+    public string ProxyPipePrefix { get; set; } = "DSC-Sync-Proxy-";
+    public int SessionId { get; set; } = SessionInfo.CurrentSessionId;
+    public IConnectionOwnerResolver Resolver { get; set; } = new CurrentSessionResolver();
+    public Func<NamedPipeServerStream, string?>? P11ClientIdentifier { get; set; }
+    public AuditLog? Audit { get; set; }
 }
 
 /// <summary>
@@ -40,8 +48,11 @@ public sealed class RemoteHost : SyncEngineBase, ITokenClient
 {
     private readonly RemoteHostOptions _options;
     private readonly IRemotePlatform _platform;
-    private readonly LoopbackPortProxy _proxy;
+    private readonly PortBroker _broker;
+    private readonly SessionProxyEndpoint _sessionEndpoint;
     private P11PipeServer? _pipe;
+    private DateTime _lastPortalAudit = DateTime.MinValue;
+    private string _tokenPc = "";
     private readonly object _stateLock = new();
     private TokenStateDto _state = new() { Generation = 1 };
     private TaskCompletionSource _stateChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -52,17 +63,22 @@ public sealed class RemoteHost : SyncEngineBase, ITokenClient
     {
         _options = options;
         _platform = platform;
-        _proxy = new LoopbackPortProxy(() => PrimaryConnection);
-        _proxy.Log += Write;
+        _broker = new PortBroker(options.EmSignerPorts, options.Resolver, sid => options.ProxyPipePrefix + sid);
+        _broker.Log += Write;
+        _sessionEndpoint = new SessionProxyEndpoint(options.ProxyPipePrefix + options.SessionId, OpenUpstreamAsync);
+        _sessionEndpoint.Log += Write;
+        _sessionEndpoint.ConnectionOpened += OnPortalConnection;
     }
 
     public event Action<TokenEventDto>? TokenEvent;
 
     public TokenStateDto State { get { lock (_stateLock) return _state; } }
     public bool IsConnected => PrimaryConnection is not null;
-    public LoopbackPortProxy Proxy => _proxy;
+    public PortBroker Broker => _broker;
+    public SessionProxyEndpoint SessionEndpoint => _sessionEndpoint;
     public IReadOnlyList<CertificateBlob> TrustedCertificates { get { lock (_stateLock) return _trusted.ToList(); } }
-    public IReadOnlyList<PortStatus> PortStatus => _proxy.Status;
+    /// <summary>Ports bound by this instance (others may be served by the router in another user's session).</summary>
+    public IReadOnlyList<PortStatus> PortStatus => _broker.Status;
     public int P11Clients => _pipe?.ConnectedClients ?? 0;
 
     public async Task StartAsync()
@@ -71,26 +87,60 @@ public sealed class RemoteHost : SyncEngineBase, ITokenClient
         {
             if (_options.StopLocalEmSigner)
                 await _platform.FreeEmSignerPortsAsync(_options.EmSignerPorts, Write, Cts.Token).ConfigureAwait(false);
-            foreach (var s in _proxy.Start(_options.EmSignerPorts).Where(s => s.State != PortState.Listening))
-                Write($"Port {s.Port}: {s.State} — {s.Detail}");
+            _sessionEndpoint.Start();
+            _broker.Start();
         }
         if (_options.EnableP11Pipe)
         {
-            _pipe = new P11PipeServer(HandlePipeRpcAsync, _options.P11PipeName);
+            _pipe = new P11PipeServer(HandlePipeRpcAsync, _options.P11PipeName) { ClientIdentifier = _options.P11ClientIdentifier };
             _pipe.Start();
         }
         StartConnectorLoops();
     }
 
-    /// <summary>Retries binding ports that were busy (e.g. after the auto-fix stopped emSigner).</summary>
+    /// <summary>Frees busy ports (stops emSigner in this session) and retries binding immediately.</summary>
     public async Task RebindPortsAsync()
     {
         if (_options.StopLocalEmSigner)
             await _platform.FreeEmSignerPortsAsync(_options.EmSignerPorts, Write, Cts.Token).ConfigureAwait(false);
-        await _proxy.StopAsync().ConfigureAwait(false);
-        foreach (var s in _proxy.Start(_options.EmSignerPorts).Where(s => s.State != PortState.Listening))
-            Write($"Port {s.Port}: {s.State} — {s.Detail}");
+        foreach (var st in _broker.TryBind().Where(st => st.State != PortState.Listening))
+            Write($"Port {st.Port}: {st.Detail}");
     }
+
+    private async Task<Stream?> OpenUpstreamAsync(int port, CancellationToken ct)
+    {
+        var mux = PrimaryConnection;
+        if (mux is null) return null;
+        return await mux.OpenStreamAsync(port, ct).ConfigureAwait(false);
+    }
+
+    private void OnPortalConnection(int port)
+    {
+        // Browsers open many short connections per signature: record one entry per burst of activity.
+        if (DateTime.UtcNow - _lastPortalAudit < TimeSpan.FromMinutes(2)) return;
+        _lastPortalAudit = DateTime.UtcNow;
+        Audit(AuditOperations.PortalActivity, null, $"emSigner :{port}", $"Browser → Local emSigner port {port}", true);
+    }
+
+    private void Audit(string operation, TokenInfoDto? token, string application, string detail, bool success)
+    {
+        if (_options.Audit is null) return;
+        token ??= State.Tokens.FirstOrDefault();
+        var cert = token?.Certificates.FirstOrDefault();
+        _options.Audit.Write(new AuditEntry
+        {
+            Operation = operation,
+            TokenPc = _tokenPc,
+            CertificateHolder = cert?.SubjectCommonName ?? "",
+            TokenSerial = token?.SerialNumber ?? "",
+            Issuer = cert?.IssuerCommonName ?? "",
+            Application = application,
+            Detail = detail,
+            Success = success,
+        });
+    }
+
+    private TokenInfoDto? TokenBySlot(ulong slot) => State.Tokens.FirstOrDefault(t => t.SlotId == slot);
 
     protected override void ConfigureConnection(MuxConnection mux)
     {
@@ -107,6 +157,8 @@ public sealed class RemoteHost : SyncEngineBase, ITokenClient
 
     protected override async Task OnConnectedAsync(MuxConnection mux)
     {
+        _tokenPc = string.IsNullOrEmpty(mux.PeerUser) ? mux.PeerMachine : $"{mux.PeerUser} @ {mux.PeerMachine}";
+        Audit(AuditOperations.Linked, null, mux.TransportKind, mux.PeerName, true);
         try
         {
             var body = await mux.CallAsync(RpcMethods.GetTokenState, null, TimeSpan.FromSeconds(15)).ConfigureAwait(false);
@@ -144,6 +196,7 @@ public sealed class RemoteHost : SyncEngineBase, ITokenClient
 
     protected override void OnDisconnected(MuxConnection mux)
     {
+        Audit(AuditOperations.Unlinked, null, mux.TransportKind, mux.PeerName, true);
         if (PrimaryConnection is null)
         {
             // Link lost: the token is "unplugged" from the VM's point of view.
@@ -172,10 +225,16 @@ public sealed class RemoteHost : SyncEngineBase, ITokenClient
         }
         if (ev.Kind is TokenEventKind.TokenInserted or TokenEventKind.TokenRemoved or TokenEventKind.TokenChanged)
         {
-            int dropped = _proxy.ResetConnections();
+            int dropped = _sessionEndpoint.ResetConnections();
             if (dropped > 0) Write($"Token changed: dropped {dropped} stale emSigner connection(s)");
         }
         toSignal.TrySetResult();
+        if (ev.Kind == TokenEventKind.TokenInserted)
+            foreach (var t in ev.State.Tokens.Where(t => ev.AddedSerials.Contains(t.SerialNumber)))
+                Audit(AuditOperations.TokenInserted, t, t.Vendor, "", true);
+        if (ev.Kind == TokenEventKind.TokenRemoved)
+            foreach (var serial in ev.RemovedSerials)
+                Audit(AuditOperations.TokenRemoved, new TokenInfoDto { SerialNumber = serial }, "", "", true);
         try { TokenEvent?.Invoke(ev); } catch (Exception ex) { Write("Token event handler failed: " + ex.Message); }
     }
 
@@ -212,7 +271,29 @@ public sealed class RemoteHost : SyncEngineBase, ITokenClient
             case RpcMethods.Ping:
                 {
                     var mux = PrimaryConnection ?? throw new RpcException(CKR.DEVICE_REMOVED, "Local PC with the DSC token is not connected");
-                    return await mux.CallAsync(method, body, TimeSpan.FromMinutes(2), ct).ConfigureAwait(false);
+                    string app = P11PipeServer.CurrentClientApp.Value ?? "PKCS#11 application";
+                    TokenInfoDto? token = null;
+                    string detail = "";
+                    if (method == RpcMethods.Login) token = TokenBySlot(RpcBody.Deserialize(body, ProtocolJson.Default.LoginRequest).SlotId);
+                    if (method == RpcMethods.Sign)
+                    {
+                        var sr = RpcBody.Deserialize(body, ProtocolJson.Default.SignRequest);
+                        token = TokenBySlot(sr.SlotId);
+                        detail = CKM.Name(sr.Mechanism);
+                    }
+                    try
+                    {
+                        var result = await mux.CallAsync(method, body, TimeSpan.FromMinutes(2), ct).ConfigureAwait(false);
+                        if (method == RpcMethods.Login) Audit(AuditOperations.Login, token, app, "", true);
+                        if (method == RpcMethods.Sign) Audit(AuditOperations.Sign, token, app, detail, true);
+                        return result;
+                    }
+                    catch (RpcException ex) when (method is RpcMethods.Login or RpcMethods.Sign)
+                    {
+                        Audit(method == RpcMethods.Login ? AuditOperations.Login : AuditOperations.Sign, token, app,
+                            $"{detail} failed: {ex.Message}".Trim(), false);
+                        throw;
+                    }
                 }
             default:
                 throw new RpcException(RpcErrors.UnknownMethod, $"Unknown method {method}");
@@ -223,7 +304,16 @@ public sealed class RemoteHost : SyncEngineBase, ITokenClient
     public async Task LoginAsync(ulong slotId, long generation, string pin, CancellationToken ct = default)
     {
         var mux = PrimaryConnection ?? throw new RpcException(CKR.DEVICE_REMOVED, "Local PC is not connected");
-        await mux.CallAsync(RpcMethods.Login, ProtocolJson.Serialize(new LoginRequest { SlotId = slotId, Generation = generation, Pin = pin }, ProtocolJson.Default.LoginRequest), TimeSpan.FromMinutes(1), ct).ConfigureAwait(false);
+        try
+        {
+            await mux.CallAsync(RpcMethods.Login, ProtocolJson.Serialize(new LoginRequest { SlotId = slotId, Generation = generation, Pin = pin }, ProtocolJson.Default.LoginRequest), TimeSpan.FromMinutes(1), ct).ConfigureAwait(false);
+            Audit(AuditOperations.Login, TokenBySlot(slotId), "DSC-Sync", "", true);
+        }
+        catch (RpcException ex)
+        {
+            Audit(AuditOperations.Login, TokenBySlot(slotId), "DSC-Sync", "failed: " + ex.Message, false);
+            throw;
+        }
     }
 
     public async Task<byte[]> SignAsync(SignRequest request, CancellationToken ct = default)
@@ -248,7 +338,8 @@ public sealed class RemoteHost : SyncEngineBase, ITokenClient
     {
         if (Interlocked.Exchange(ref _hostDisposed, 1) != 0) return;
         if (_pipe is not null) await _pipe.DisposeAsync().ConfigureAwait(false);
-        await _proxy.DisposeAsync().ConfigureAwait(false);
+        await _broker.DisposeAsync().ConfigureAwait(false);
+        await _sessionEndpoint.DisposeAsync().ConfigureAwait(false);
         await base.DisposeAsync().ConfigureAwait(false);
     }
 }

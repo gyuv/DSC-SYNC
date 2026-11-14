@@ -16,9 +16,9 @@ public sealed class PipeP11Channel : IP11Channel
     private FrameCodec? _codec;
     private long _nextId;
 
-    public PipeP11Channel(string pipeName = DscConstants.P11PipeName, int connectTimeoutMs = 2000)
+    public PipeP11Channel(string? pipeName = null, int connectTimeoutMs = 2000)
     {
-        _pipeName = pipeName;
+        _pipeName = pipeName ?? SessionInfo.P11Pipe();
         _connectTimeoutMs = connectTimeoutMs;
     }
 
@@ -87,7 +87,7 @@ public sealed class P11PipeServer : IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private Task? _acceptLoop;
 
-    public P11PipeServer(RpcHandler handler, string pipeName = DscConstants.P11PipeName, Func<string, NamedPipeServerStream>? pipeFactory = null)
+    public P11PipeServer(RpcHandler handler, string pipeName, Func<string, NamedPipeServerStream>? pipeFactory = null)
     {
         _handler = handler;
         _pipeName = pipeName;
@@ -96,11 +96,17 @@ public sealed class P11PipeServer : IAsyncDisposable
 
     public int ConnectedClients;
 
+    /// <summary>Name of the application (process) whose request is currently being handled, for the audit log.</summary>
+    public static readonly AsyncLocal<string?> CurrentClientApp = new();
+
+    /// <summary>Resolves the client process name of a connected pipe (Windows); null elsewhere.</summary>
+    public Func<NamedPipeServerStream, string?>? ClientIdentifier { get; set; }
+
     public void Start() => _acceptLoop = Task.Run(AcceptLoopAsync);
 
     private NamedPipeServerStream CreatePipe() => _pipeFactory?.Invoke(_pipeName)
         ?? new NamedPipeServerStream(_pipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
-            PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
     private async Task AcceptLoopAsync()
     {
@@ -128,8 +134,11 @@ public sealed class P11PipeServer : IAsyncDisposable
     {
         Interlocked.Increment(ref ConnectedClients);
         var codec = new FrameCodec(pipe);
+        string? app = null;
+        try { app = ClientIdentifier?.Invoke(pipe); } catch (Exception) { }
         try
         {
+            CurrentClientApp.Value = app;
             while (!_cts.IsCancellationRequested)
             {
                 var frame = await codec.ReadAsync(_cts.Token).ConfigureAwait(false);
