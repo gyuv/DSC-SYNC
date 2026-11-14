@@ -185,7 +185,7 @@ public sealed class DvcPluginPipeConnector : ITransportConnector
 {
     private readonly string _pipeName;
 
-    public DvcPluginPipeConnector(string pipeName = DscConstants.DvcPluginPipeName) => _pipeName = pipeName;
+    public DvcPluginPipeConnector(string? pipeName = null) => _pipeName = pipeName ?? $"{DscConstants.DvcPluginPipeName}-{SessionInfo.CurrentSessionId}";
 
     public string Kind => TransportKinds.RdpDvc;
     public bool IsAvailable => true;

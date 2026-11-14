@@ -1,0 +1,359 @@
+<Window x:Class="DscSync.App.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DSC-Sync" Width="1180" Height="780" MinWidth="980" MinHeight="640"
+        Background="{StaticResource WindowBackground}" WindowStartupLocation="CenterScreen"
+        FontFamily="Segoe UI" TextOptions.TextFormattingMode="Display">
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="8,0,8,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Border Width="40" Height="40" CornerRadius="11" Background="{StaticResource Slate2}" BorderBrush="{StaticResource Gold}" BorderThickness="2">
+                    <TextBlock Text="DS" FontWeight="Bold" FontSize="16" Foreground="{StaticResource Gold}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <StackPanel Margin="12,0,0,0">
+                    <TextBlock Text="DSC-Sync" Style="{StaticResource H1}"/>
+                    <TextBlock x:Name="SubtitleText" Text="USB DSC token bridge for Remote Desktop" Foreground="{StaticResource Muted}" FontSize="12"/>
+                </StackPanel>
+            </StackPanel>
+
+            <Border Grid.Column="2" Background="#1AFFFFFF" CornerRadius="12" Padding="4" Margin="0,0,14,0" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton x:Name="ModeLocal" Style="{StaticResource Segment}" GroupName="Mode" Checked="Mode_Checked" Content="🖥  Local PC (Token Source)"/>
+                    <RadioButton x:Name="ModeRemote" Style="{StaticResource Segment}" GroupName="Mode" Checked="Mode_Checked" Content="☁  Remote Desktop (Target VM)"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="3" x:Name="SyncBadge" CornerRadius="14" Padding="14,7" Background="#33EF4444" VerticalAlignment="Center">
+                <TextBlock x:Name="SyncBadgeText" Text="NO TOKEN" FontWeight="Bold" FontSize="12" Foreground="#FCA5A5"/>
+            </Border>
+        </Grid>
+
+        <TabControl Grid.Row="1" x:Name="Tabs">
+            <!-- ============================= DASHBOARD ============================= -->
+            <TabItem Header="Dashboard">
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="5*"/>
+                        <ColumnDefinition Width="6*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <!-- Live token card -->
+                        <Border Style="{StaticResource Card}" BorderBrush="{StaticResource Gold}" BorderThickness="1.5">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#33F59E0B" Offset="0"/>
+                                    <GradientStop Color="#141E293B" Offset="0.45"/>
+                                    <GradientStop Color="#263B82F6" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <StackPanel>
+                                <Grid>
+                                    <TextBlock Text="ACTIVE DSC TOKEN" Foreground="{StaticResource Gold}" FontWeight="Bold" FontSize="11"/>
+                                    <TextBlock x:Name="VendorText" Text="—" HorizontalAlignment="Right" Foreground="{StaticResource Muted}" FontSize="11"/>
+                                </Grid>
+                                <TextBlock x:Name="HolderText" Text="No token" FontSize="26" FontWeight="SemiBold" Margin="0,14,0,0" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock x:Name="OrgText" Text="Insert a USB DSC token on the Local PC" Foreground="{StaticResource Muted}" Margin="0,2,0,0"/>
+                                <UniformGrid Columns="2" Margin="0,16,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="ISSUER (CA)" Style="{StaticResource Label}"/>
+                                        <TextBlock x:Name="IssuerText" Text="—" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                    <StackPanel>
+                                        <TextBlock Text="VALID UNTIL" Style="{StaticResource Label}"/>
+                                        <TextBlock x:Name="ExpiryText" Text="—" FontWeight="SemiBold"/>
+                                    </StackPanel>
+                                    <StackPanel>
+                                        <TextBlock Text="TOKEN SERIAL" Style="{StaticResource Label}"/>
+                                        <TextBlock x:Name="SerialText" Text="—"/>
+                                    </StackPanel>
+                                    <StackPanel>
+                                        <TextBlock Text="CERTIFICATE SERIAL" Style="{StaticResource Label}"/>
+                                        <TextBlock x:Name="CertSerialText" Text="—" TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                </UniformGrid>
+                                <TextBlock x:Name="OtherTokensText" Foreground="{StaticResource Muted}" Margin="0,12,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Link card -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Connection" Style="{StaticResource H2}"/>
+                                <TextBlock x:Name="LinkText" Text="Starting…" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="LinkHint" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0" FontSize="12"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Health monitor -->
+                    <Border Grid.Column="1" Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid>
+                                <TextBlock Text="Port &amp; Service Health" Style="{StaticResource H2}"/>
+                                <TextBlock x:Name="HealthTime" HorizontalAlignment="Right" Foreground="{StaticResource Muted}" FontSize="11"/>
+                            </Grid>
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl x:Name="HealthList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="#0DFFFFFF" CornerRadius="8" Padding="10,7" Margin="0,0,0,6">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="22"/>
+                                                        <ColumnDefinition Width="150"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding Badge}" Foreground="{Binding Color}" FontSize="13"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding Detail}" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                            <StackPanel Grid.Row="2" Margin="0,10,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="AutoFixButton" Content="⚡ Diagnose &amp; Auto-Fix" Style="{StaticResource GoldButton}" Click="AutoFix_Click"/>
+                                    <Button Content="Refresh" Style="{StaticResource GhostButton}" Click="RefreshHealth_Click"/>
+                                    <Button Content="Export support bundle" Style="{StaticResource GhostButton}" Click="SupportBundle_Click"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <TextBlock Text="Token PIN for signature test (optional):" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Margin="0,0,8,0"/>
+                                    <PasswordBox x:Name="DiagPin" Width="140"/>
+                                </StackPanel>
+                                <TextBlock x:Name="FixReport" Margin="0,10,0,0" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ============================= PDF SIGNER ============================= -->
+            <TabItem Header="Quick PDF Signer">
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="340"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource Card}" AllowDrop="True" Drop="Pdf_Drop" DragOver="Pdf_DragOver">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid>
+                                <TextBlock x:Name="PdfName" Text="Drop a PDF here or browse" Style="{StaticResource H2}" TextTrimming="CharacterEllipsis" Margin="0,0,120,10"/>
+                                <Button Content="Browse…" HorizontalAlignment="Right" VerticalAlignment="Top" Style="{StaticResource GhostButton}" Click="BrowsePdf_Click" Margin="0"/>
+                            </Grid>
+                            <Border Grid.Row="1" Background="#0AFFFFFF" CornerRadius="10" BorderBrush="{StaticResource GlassBorder}" BorderThickness="1">
+                                <Grid>
+                                    <TextBlock x:Name="DropHint" Text="⬇  Drag &amp; drop a PDF&#x0a;then drag on the page to place the signature" TextAlignment="Center"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="15"/>
+                                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                        <Canvas x:Name="PageCanvas" MouseLeftButtonDown="Page_MouseDown" MouseMove="Page_MouseMove" MouseLeftButtonUp="Page_MouseUp"
+                                                HorizontalAlignment="Center" VerticalAlignment="Top" Margin="10" Cursor="Cross">
+                                            <Image x:Name="PageImage" Stretch="None"/>
+                                            <Border x:Name="SigRect" BorderBrush="{StaticResource Gold}" BorderThickness="2" Background="#40F59E0B" CornerRadius="4" Visibility="Collapsed">
+                                                <TextBlock Text="Signature" Foreground="#0F172A" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </Canvas>
+                                    </ScrollViewer>
+                                </Grid>
+                            </Border>
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                                <Button Content="◀" Style="{StaticResource GhostButton}" Click="PrevPage_Click"/>
+                                <TextBlock x:Name="PageLabel" Text="Page – / –" VerticalAlignment="Center" Margin="10,0,18,0"/>
+                                <Button Content="▶" Style="{StaticResource GhostButton}" Click="NextPage_Click"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Grid.Column="1" Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="Sign with synced DSC" Style="{StaticResource H2}"/>
+                            <TextBlock Text="CERTIFICATE" Style="{StaticResource Label}"/>
+                            <ComboBox x:Name="CertCombo" DisplayMemberPath="Display"/>
+                            <TextBlock Text="REASON" Style="{StaticResource Label}"/>
+                            <TextBox x:Name="ReasonBox" Text="Approved"/>
+                            <TextBlock Text="LOCATION" Style="{StaticResource Label}"/>
+                            <TextBox x:Name="LocationBox" Text="India"/>
+                            <CheckBox x:Name="VisibleCheck" Content="Visible signature box" IsChecked="True"/>
+                            <TextBlock x:Name="RectText" Text="Position: bottom-right of last page (drag on the page to change)" Foreground="{StaticResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                            <TextBlock Text="TOKEN PIN" Style="{StaticResource Label}"/>
+                            <PasswordBox x:Name="PdfPin"/>
+                            <Button x:Name="SignButton" Content="✍  Sign PDF" Style="{StaticResource GoldButton}" Margin="0,18,0,0" Click="SignPdf_Click"/>
+                            <TextBlock x:Name="SignResult" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                            <Button x:Name="OpenSignedButton" Content="Show signed file" Style="{StaticResource GhostButton}" Margin="0,8,0,0" Visibility="Collapsed" Click="OpenSigned_Click"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ============================= REPORTS ============================= -->
+            <TabItem Header="Reports">
+                <Grid Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Border Style="{StaticResource Card}" Padding="14">
+                        <WrapPanel>
+                            <StackPanel Margin="0,0,14,0">
+                                <TextBlock Text="FROM" Style="{StaticResource Label}" Margin="0,0,0,3"/>
+                                <DatePicker x:Name="ReportFrom" Width="130"/>
+                            </StackPanel>
+                            <StackPanel Margin="0,0,14,0">
+                                <TextBlock Text="TO" Style="{StaticResource Label}" Margin="0,0,0,3"/>
+                                <DatePicker x:Name="ReportTo" Width="130"/>
+                            </StackPanel>
+                            <StackPanel Margin="0,0,14,0">
+                                <TextBlock Text="USER" Style="{StaticResource Label}" Margin="0,0,0,3"/>
+                                <TextBox x:Name="ReportUser" Width="150"/>
+                            </StackPanel>
+                            <StackPanel Margin="0,0,14,0">
+                                <TextBlock Text="SEARCH (holder, serial, app…)" Style="{StaticResource Label}" Margin="0,0,0,3"/>
+                                <TextBox x:Name="ReportSearch" Width="200"/>
+                            </StackPanel>
+                            <StackPanel Margin="0,0,14,0">
+                                <TextBlock Text="SHOW" Style="{StaticResource Label}" Margin="0,0,0,3"/>
+                                <ComboBox x:Name="ReportKind" Width="170" SelectedIndex="0">
+                                    <ComboBoxItem Content="DSC usage only"/>
+                                    <ComboBoxItem Content="All events"/>
+                                </ComboBox>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
+                                <Button Content="Apply" Click="ReportRefresh_Click"/>
+                                <Button Content="Today" Style="{StaticResource GhostButton}" Click="ReportToday_Click"/>
+                                <Button Content="Export CSV (Excel)" Style="{StaticResource GoldButton}" Click="ReportExport_Click"/>
+                            </StackPanel>
+                        </WrapPanel>
+                    </Border>
+                    <UniformGrid Grid.Row="1" Columns="4">
+                        <Border Style="{StaticResource Card}" Padding="14">
+                            <StackPanel>
+                                <TextBlock Text="SIGNATURES" Style="{StaticResource Label}" Margin="0"/>
+                                <TextBlock x:Name="StatSignatures" Text="0" FontSize="26" FontWeight="SemiBold" Foreground="{StaticResource Gold}"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Card}" Padding="14">
+                            <StackPanel>
+                                <TextBlock Text="PORTAL SESSIONS" Style="{StaticResource Label}" Margin="0"/>
+                                <TextBlock x:Name="StatPortal" Text="0" FontSize="26" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Card}" Padding="14">
+                            <StackPanel>
+                                <TextBlock Text="ACTIVE USERS" Style="{StaticResource Label}" Margin="0"/>
+                                <TextBlock x:Name="StatUsers" Text="0" FontSize="26" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Card}" Padding="14">
+                            <StackPanel>
+                                <TextBlock Text="DSC CERTIFICATES USED" Style="{StaticResource Label}" Margin="0"/>
+                                <TextBlock x:Name="StatCerts" Text="0" FontSize="26" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Border>
+                    </UniformGrid>
+                    <Border Grid.Row="2" Style="{StaticResource Card}" Padding="6">
+                        <DataGrid x:Name="ReportGrid">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Date / Time" Binding="{Binding LocalTime, StringFormat=dd-MMM-yyyy HH:mm:ss}" Width="150"/>
+                                <DataGridTextColumn Header="User" Binding="{Binding User}" Width="140"/>
+                                <DataGridTextColumn Header="Operation" Binding="{Binding Operation}" Width="160"/>
+                                <DataGridTextColumn Header="DSC Holder" Binding="{Binding CertificateHolder}" Width="170"/>
+                                <DataGridTextColumn Header="Token Serial" Binding="{Binding TokenSerial}" Width="110"/>
+                                <DataGridTextColumn Header="Application / Portal" Binding="{Binding Application}" Width="150"/>
+                                <DataGridTextColumn Header="Token PC" Binding="{Binding TokenPc}" Width="150"/>
+                                <DataGridCheckBoxColumn Header="OK" Binding="{Binding Success}" Width="40"/>
+                                <DataGridTextColumn Header="Detail" Binding="{Binding Detail}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ============================= SETTINGS ============================= -->
+            <TabItem Header="Settings">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,10,0,0">
+                    <UniformGrid Columns="2" VerticalAlignment="Top">
+                        <Border Style="{StaticResource Card}" VerticalAlignment="Top">
+                            <StackPanel>
+                                <TextBlock Text="Connection" Style="{StaticResource H2}"/>
+                                <TextBlock Text="TRANSPORT" Style="{StaticResource Label}"/>
+                                <ComboBox x:Name="TransportCombo" SelectedIndex="0">
+                                    <ComboBoxItem Content="Automatic (RDP channel, TLS tunnel fallback)"/>
+                                    <ComboBoxItem Content="RDP Dynamic Virtual Channel only"/>
+                                    <ComboBoxItem Content="TLS tunnel only (Citrix, AnyDesk, VPN…)"/>
+                                </ComboBox>
+                                <TextBlock Text="REMOTE VM HOST / IP (Local mode, TLS tunnel)" Style="{StaticResource Label}"/>
+                                <TextBox x:Name="HostBox"/>
+                                <TextBlock Text="TLS TUNNEL PORT" Style="{StaticResource Label}"/>
+                                <TextBox x:Name="PortBox"/>
+                                <TextBlock Text="PAIRING PIN (same on both PCs; optional for RDP-only use)" Style="{StaticResource Label}"/>
+                                <PasswordBox x:Name="PairPinBox"/>
+                                <TextBlock Text="EMSIGNER PORTS" Style="{StaticResource Label}"/>
+                                <TextBox x:Name="PortsBox"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Card}" VerticalAlignment="Top">
+                            <StackPanel>
+                                <TextBlock Text="Behaviour" Style="{StaticResource H2}"/>
+                                <CheckBox x:Name="AutoStartCheck" Content="Start DSC-Sync when I sign in to Windows"/>
+                                <CheckBox x:Name="StopEmSignerCheck" Content="Remote: stop emSigner on the VM (it cannot see tokens there)"/>
+                                <CheckBox x:Name="SyncCertCheck" Content="Remote: trust the Local emSigner SSL certificate automatically"/>
+                                <CheckBox x:Name="SimulatedCheck" Content="Local: demo mode with a simulated token (no hardware)"/>
+                                <TextBlock Text="VENDOR PKCS#11 DLLS (optional, one per line; auto-detected when empty)" Style="{StaticResource Label}"/>
+                                <TextBox x:Name="VendorBox" AcceptsReturn="True" Height="70" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                                    <Button Content="💾  Save &amp; Restart Sync" Click="SaveSettings_Click"/>
+                                </StackPanel>
+                                <TextBlock Text="ADMINISTRATOR OPTIONS (server / IT)" Style="{StaticResource Label}" Margin="0,22,0,6"/>
+                                <WrapPanel>
+                                    <Button Content="Auto-start for all users on this server" Style="{StaticResource GhostButton}" Margin="0,0,8,8" Click="AllUsers_Click"/>
+                                    <Button Content="Install as Windows service (Local PC)" Style="{StaticResource GhostButton}" Margin="0,0,8,8" Click="InstallService_Click"/>
+                                    <Button Content="Remove service" Style="{StaticResource GhostButton}" Margin="0,0,8,8" Click="RemoveService_Click"/>
+                                </WrapPanel>
+                                <TextBlock x:Name="SettingsResult" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </UniformGrid>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============================= LOG ============================= -->
+            <TabItem Header="Activity Log">
+                <Border Style="{StaticResource Card}" Margin="8,18,8,8">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <ListBox x:Name="LogList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource Text}" FontFamily="Consolas" FontSize="12"/>
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="Open log folder" Style="{StaticResource GhostButton}" Click="OpenLogs_Click"/>
+                            <Button Content="Clear view" Style="{StaticResource GhostButton}" Click="ClearLog_Click"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</Window>
