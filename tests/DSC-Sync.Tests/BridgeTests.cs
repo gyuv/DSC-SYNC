@@ -342,7 +342,7 @@ public class BridgeTests
     }
 
     [Fact]
-    public void TokenRsa_RefusesPrivateExport()
+    public async Task TokenRsa_RefusesPrivateExport()
     {
         using var token = MockToken.Create("RSA", "EP-9001");
         var backend = new MockTokenBackend();
@@ -353,7 +353,7 @@ public class BridgeTests
         using var rsa = new TokenRsa(mgr, t, t.Certificates[0]);
         Assert.Throws<CryptographicException>(() => rsa.ExportParameters(true));
         Assert.Equal(2048, rsa.KeySize);
-        mgr.LoginAsync(t.SlotId, mgr.State.Generation, token.Pin).GetAwaiter().GetResult();
+        await mgr.LoginAsync(t.SlotId, mgr.State.Generation, token.Pin);
         var hash = SHA384.HashData(Encoding.UTF8.GetBytes("abc"));
         var sig = rsa.SignHash(hash, HashAlgorithmName.SHA384, RSASignaturePadding.Pkcs1);
         Assert.True(rsa.VerifyHash(hash, sig, HashAlgorithmName.SHA384, RSASignaturePadding.Pkcs1));
