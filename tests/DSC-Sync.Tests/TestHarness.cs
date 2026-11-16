@@ -23,7 +23,7 @@ public sealed class LinkedPair : IAsyncDisposable
     public required List<int> ProxyPorts { get; init; }
 
     public static async Task<LinkedPair> CreateAsync(MockToken? initialToken = null, List<int>? proxyPorts = null,
-        Func<int, int>? mapLocalPort = null, string? remotePin = null, int sessionId = 0,
+        Func<int, int>? mapLocalPort = null, string? remotePin = null, int? sessionId = null,
         DscSync.Tunnel.Proxy.IConnectionOwnerResolver? resolver = null, string? proxyPrefix = null, DscSync.Core.Audit.AuditLog? audit = null,
         bool startPortBroker = true)
     {
@@ -44,7 +44,8 @@ public sealed class LinkedPair : IAsyncDisposable
             SyncEmSignerCertificate = false,
             P11PipeName = pipe,
             ProxyPipePrefix = proxyPrefix ?? pipe + "-proxy-",
-            SessionId = sessionId,
+            // Must match what the resolver reports for this process (the real RDS session id on Windows).
+            SessionId = sessionId ?? DscSync.Core.SessionInfo.CurrentSessionId,
             Resolver = resolver ?? new DscSync.Tunnel.Proxy.CurrentSessionResolver(),
             Audit = audit,
         }, new NullRemotePlatform()) { RetryDelay = TimeSpan.FromMilliseconds(200) };
@@ -96,7 +97,7 @@ public static class TestUtil
     public static async Task<(Stream A, Stream B)> CreateDuplexAsync()
     {
         string name = "dscsync-duplex-" + Guid.NewGuid().ToString("N")[..12];
-        var server = new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        var server = new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 65536, 65536);
         var client = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous);
         var accept = server.WaitForConnectionAsync();
         await client.ConnectAsync(5000);
