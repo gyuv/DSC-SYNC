@@ -107,10 +107,10 @@ public sealed class SessionProxyEndpoint : IAsyncDisposable
                 PipeAccessRights.ReadWrite, AccessControlType.Allow));
             security.AddAccessRule(new PipeAccessRule(WindowsIdentity.GetCurrent().User!, PipeAccessRights.FullControl, AccessControlType.Allow));
             return NamedPipeServerStreamAcl.Create(_pipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
-                PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, security);
+                PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 65536, 65536, security);
         }
         return new NamedPipeServerStream(_pipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
-            PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 65536, 65536);
     }
 
     private async Task LoopAsync()
